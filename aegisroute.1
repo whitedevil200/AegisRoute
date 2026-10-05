@@ -1,0 +1,352 @@
+.TH AEGISROUTE 1 "October 2026" "AegisRoute 3.0.0" "Advaitik Intelligence"
+.SH NAME
+aegisroute \- multi-protocol Linux traceroute intelligence and route analysis
+.SH SYNOPSIS
+.B aegisroute
+.RI [ options ]
+.RI [ target ]
+.SH DESCRIPTION
+.B AegisRoute
+resolves a target and runs the native Linux
+.BR traceroute (8)
+backend with UDP, TCP, ICMP, or all three probe strategies. Each strategy sends
+probes with successively increasing TTL (IPv4) or hop-limit (IPv6) values.
+Routers that expire the probes normally return ICMP time-exceeded responses.
+AegisRoute parses those responses into hops, calculates loss and latency statistics,
+optionally enriches public addresses, correlates paths, and produces findings.
+.PP
+When standard input is a terminal and no target is supplied, AegisRoute opens a
+guided menu. Automation should provide a target and an explicit output format.
+.PP
+On Windows, AegisRoute automatically uses tracert.exe as an ICMP compatibility
+backend. Every protocol selection returns a real ICMP route with a visible notice
+that records the requested mode and actual backend. TCP/UDP packet semantics, flow
+pinning, interface binding, IPv4 source binding, custom sample counts, and MTU
+discovery require the full Linux backend; selecting them never causes a crash.
+.SH MEASUREMENT DEFINITIONS
+.TP
+.B TTL / hop limit
+The maximum number of routers a probe may cross. It increases from
+.B --first-hop
+through
+.BR --max-hops .
+.TP
+.B RTT
+Round-trip time from this system to a router or destination reply. It is not the
+one-way delay of the individual link represented by the hop.
+.TP
+.B Loss
+The percentage of probes at a TTL with no diagnostic reply. Intermediate routers
+often rate-limit ICMP, so intermediate loss alone does not prove forwarded traffic loss.
+.TP
+.B Jitter
+Population standard deviation of the observed RTT samples at a hop.
+.TP
+.B ECMP / multipath
+More than one responder at one TTL, commonly caused by equal-cost load balancing.
+.TP
+.B ASN
+Autonomous System Number identifying a network participating in Internet routing.
+.SH PROBE OPTIONS
+.TP
+.BR --backend " auto|native|scamper"
+Select the measurement implementation. Auto uses native traceroute for classic
+measurement and Scamper for Paris/MDA. Default: auto.
+.TP
+.BR --strategy " classic|paris|mda"
+Select classic native traceroute, Scamper Paris flow-stable traceroute, or genuine
+Scamper tracelb MDA. Paris and MDA require Scamper. Default: classic.
+.TP
+.BR --mda-confidence " 95|99"
+MDA completeness confidence. A value of 99 sends more probes. Default: 95.
+.TP
+.BI --mda-max-probes " N"
+Hard safety cap for one MDA measurement, from 100 through 10000. Default: 1000.
+.TP
+.BI --scamper-binary " PATH"
+Scamper executable. AEGISROUTE_SCAMPER changes the default.
+.TP
+.BR \-P , " --protocol " "udp|tcp|icmp|all"
+Select UDP with a fixed destination port, TCP to the selected service port, ICMP
+echo, or all three concurrently. The default is all. Cross-protocol differences
+are reported as path divergence.
+.TP
+.BR \-p , " --port " PORT
+Destination service port for TCP and UDP. Ignored by ICMP. Default: 443.
+.TP
+.BR \-q , " --probes " N
+Samples per TTL, from 1 through 10. More samples improve statistics but increase
+traffic and run time. Default: 3.
+.TP
+.BR \-m , " --max-hops " N
+Highest TTL to probe, from 1 through 255. Default: 30.
+.TP
+.BR \-f , " --first-hop " N
+First TTL to probe. Use a value above one only to skip known local hops. Default: 1.
+.TP
+.BR \-w , " --wait " SECONDS
+Maximum wait for each reply before recording a timeout, from 0.05 through 60.
+Default: 1.0 second.
+.TP
+.B \-4
+Resolve and probe only IPv4. This is the default address family.
+.TP
+.B \-6
+Resolve and probe only IPv6.
+.TP
+.BR \-i , " --interface " NAME
+Bind probes to a Linux interface such as eth0, ens3, or wg0.
+.TP
+.BR \-s , " --source " ADDRESS
+Bind probes to a configured local source IPv4 or IPv6 address.
+.TP
+.B --flow-consistent
+Pin ports when the backend supports --sport. This Paris-inspired behavior reduces
+false route changes caused by ECMP hashing; it is not full Paris Traceroute.
+.TP
+.BI --source-port " PORT"
+Source port used with flow-consistent probing. Default: 33434.
+.TP
+.B --mtu
+Request Linux traceroute path-MTU discovery when the backend supports --mtu.
+.SH ENRICHMENT OPTIONS
+.TP
+.BI --enrich " MODULES"
+Comma-separated modules. rdns performs PTR DNS. asn uses Team Cymru. geo uses
+ipwho.is. rpki requests RIPEstat validation and routing visibility. ixp checks
+PeeringDB IXP LAN prefixes. Default: rdns,asn.
+.TP
+.B --no-enrich
+Disable every external lookup. Private, loopback, link-local, carrier-NAT,
+multicast, reserved, and unspecified addresses are still classified locally.
+.TP
+.BI --concurrency " N"
+Maximum simultaneous DNS/geolocation lookups, from 1 through 128. ASN remains one
+bulk request. Default: 16.
+.SH ANALYSIS AND OUTPUT OPTIONS
+.TP
+.BI --spike-threshold " MS"
+Report a latency jump when average RTT rises by at least this amount from the
+previous responding hop. Default: 35 milliseconds.
+.TP
+.BR --format " table|json|jsonl|csv|prometheus|html"
+Choose the styled terminal dashboard, a JSON document, one compact JSON document
+per line, flat CSV, Prometheus exposition, or standalone HTML. HTML requires
+--output. Watch mode converts JSON to JSONL. Default: table.
+.TP
+.BR \-o , " --output " FILE
+Write the report to FILE. Single reports use atomic replacement. Later watch
+cycles append.
+.TP
+.BI --compare " REPORT.json"
+Compare each protocol with an earlier AegisRoute JSON report and flag TTLs whose
+responder sets changed.
+.TP
+.BI --watch " SECONDS"
+Repeat the complete measurement after this interval (minimum one second) and
+compare each cycle with the previous cycle.
+.TP
+.BI --cycles " N"
+Stop watch mode after N cycles. Zero continues until Ctrl+C. Default: 0.
+.TP
+.BI --store " DATABASE"
+Store reports, route fingerprints, and findings in a WAL-mode SQLite database.
+.TP
+.BI --history " N"
+Print the latest N stored measurements for the target and exit. Requires --store.
+.TP
+.BI --atlas-id " ID"
+Fetch and normalize an existing public RIPE Atlas traceroute measurement. This is
+read-only and does not create a measurement or consume Atlas credits.
+.TP
+.BI --atlas-ids " ID,ID"
+Fetch, normalize, and fuse several existing RIPE Atlas measurements.
+.TP
+.BI --merge-report " FILE"
+Import a saved AegisRoute JSON report as another vantage. Repeatable.
+.TP
+.BI --remote-report " HTTPS_URL"
+Fetch a AegisRoute report from a read-only remote agent. Repeatable; HTTPS required.
+.TP
+.BI --remote-token " TOKEN"
+Bearer token for remote agents. AEGISROUTE_REMOTE_TOKEN is preferred.
+.TP
+.B --bgp-events
+Correlate observed prefixes with RIPEstat BGP announcements and withdrawals.
+.TP
+.BI --bgp-window " HOURS"
+BGP lookback from 1 through 168 hours. Default: 24.
+.TP
+.BI --bgp-provider " ripestat|bgpstream"
+Control-plane source. BGPStream requires the optional pybgpstream package.
+Default: ripestat.
+.TP
+.B --service-check
+Measure TCP connection reachability and timing on --port.
+.TP
+.B --tls-check
+Perform a verified TLS handshake and report protocol, cipher, certificate, and time.
+.TP
+.B --alias-resolve
+Actively test bounded alias candidates with Scamper Ally. Candidate selection is
+not treated as confirmation.
+.TP
+.BI --alias-max-pairs " N"
+Maximum Ally pairs, from 1 through 20. Default: 5.
+.TP
+.BI --tnt-output " FILE"
+Import an external TNT text capture for hidden-MPLS correlation.
+.TP
+.BI --history-latency-delta " MS"
+Historical RTT increase that creates a degradation finding. Default: 25.
+.TP
+.BI --webhook " HTTPS_URL"
+POST threshold-matched findings as JSON. The payload is also Slack-compatible.
+.TP
+.BI --alert-severity " info|notice|warning|critical"
+Minimum alert severity. Default: warning.
+.TP
+.BI --alert-mode " changes|all"
+Send actionable route/security changes only, or all threshold-matched findings.
+Default: changes.
+.TP
+.BI --email-to " ADDRESS"
+Send threshold-matched findings by STARTTLS SMTP.
+.TP
+.BI --email-from " ADDRESS"
+Sender required with --email-to.
+.TP
+.BI --smtp-host " HOST"
+STARTTLS SMTP server required with --email-to.
+.TP
+.BI --smtp-port " PORT"
+SMTP port. Default: 587.
+.TP
+.BI --smtp-user " USER"
+Optional SMTP username. The password is read from AEGISROUTE_SMTP_PASSWORD.
+.TP
+.B --tui
+Clear and redraw table output as a live console. Tab rotates protocol views, r
+requests an immediate refresh, and q exits. Requires a terminal and table format.
+.SH INTERFACE AND TROUBLESHOOTING OPTIONS
+.TP
+.B --interactive
+Force the guided target, protocol, port, enrichment, format, and flow menu.
+.TP
+.B --demo
+Run deterministic sample routes through parsing, analysis, and rendering. It sends
+no DNS query, enrichment request, or probe packet.
+.TP
+.B --doctor
+Print platform, Python, traceroute path, backend features, and Linux privilege
+diagnostics, then exit.
+.TP
+.BI --binary " PATH"
+Use another traceroute executable. AEGISROUTE_TRACEROUTE changes the default.
+.TP
+.B --dry-run
+Resolve the target and display exact traceroute commands without launching them.
+.TP
+.BI --company " NAME"
+Set the company name in banners/reports. AEGISROUTE_COMPANY changes the default.
+Built-in default: Advaitik Intelligence.
+.TP
+.BR --theme " amber|cyber|mono|ocean"
+Choose the ANSI terminal palette. AEGISROUTE_THEME changes the default. Default: cyber.
+.TP
+.B --no-color
+Disable ANSI colors for logs, basic terminals, and assistive tools.
+.TP
+.BR \-h , " --help"
+Show detailed command help, definitions, privacy notes, and examples.
+.TP
+.B --version
+Show the AegisRoute version.
+.SH FINDINGS
+AegisRoute can report silent hops, multiple responders, possible address loops,
+ICMP unreachable annotations, latency jumps, incomplete paths, cross-protocol path
+divergence, and baseline changes. These are diagnostic clues, not vulnerability claims.
+.SH EXIT STATUS
+.TP
+.B 0
+At least one trace completed, or a demo/healthy doctor run succeeded.
+.TP
+.B 2
+Invalid configuration, dependency/resolution failure, unhealthy doctor result, or
+all requested probe engines failed.
+.TP
+.B 130
+Interrupted with Ctrl+C.
+.SH PRIVILEGES
+UDP commonly works unprivileged. TCP or ICMP can require root/capabilities depending
+on the distribution. Prefer narrow privileges on the packaged traceroute binary.
+Never add setuid or capabilities to the Python script.
+.SH EXAMPLES
+.TP
+.B aegisroute
+Open the guided menu.
+.TP
+.B aegisroute --demo
+Preview the interface without sending packets.
+.TP
+.B aegisroute example.com
+Run all protocols with reverse-DNS and ASN enrichment.
+.TP
+.B aegisroute 1.1.1.1 -P tcp -p 443 --flow-consistent
+Measure a flow-consistent HTTPS path.
+.TP
+.B aegisroute example.com --no-enrich --format json -o trace.json
+Create JSON without external hop lookups.
+.TP
+.B aegisroute example.com --watch 30 --cycles 10 --format jsonl -o history.jsonl
+Collect ten route snapshots at thirty-second intervals.
+.SH ENVIRONMENT
+.TP
+.B AEGISROUTE_COMPANY
+Default company name.
+.TP
+.B AEGISROUTE_THEME
+Default color theme.
+.TP
+.B AEGISROUTE_TRACEROUTE
+Default traceroute executable.
+.TP
+.B AEGISROUTE_SCAMPER
+Default Scamper executable.
+.TP
+.B AEGISROUTE_REMOTE_TOKEN
+Bearer token used to fetch remote agent reports.
+.TP
+.B AEGISROUTE_AGENT_TOKEN
+Bearer token required by aegisroute-agent.
+.TP
+.B AEGISROUTE_SMTP_PASSWORD
+SMTP password; never place it directly in the command line.
+.TP
+.B AEGISROUTE_PYTHON
+Python executable used by the Bash launcher.
+.SH FILES
+.TP
+.I /usr/local/lib/aegisroute
+Default application directory.
+.TP
+.I /usr/local/bin/aegisroute
+Default launcher symlink.
+.TP
+.I /usr/local/bin/aegisroute-agent
+Read-only distributed report agent.
+.TP
+.I /usr/local/share/man/man1/aegisroute.1
+Default manual page.
+.SH SECURITY
+AegisRoute is a single-target diagnostic tool, not a scanner. Use it only on networks
+and systems you are authorized to measure. User values are passed as subprocess
+argument arrays rather than shell commands.
+.SH AUTHORS
+Advaitik Intelligence.
+.SH SEE ALSO
+.BR traceroute (8),
+.BR scamper (1),
+.BR tracepath (8),
+.BR mtr (8),
+.BR ping (8)

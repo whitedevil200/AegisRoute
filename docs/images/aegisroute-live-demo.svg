@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="690" viewBox="0 0 1200 690" role="img" aria-labelledby="title desc">
+  <title id="title">AegisRoute live terminal demonstration</title>
+  <desc id="desc">A styled terminal report for an authorized trace to a Google IP address.</desc>
+  <rect width="1200" height="690" rx="24" fill="#07111f"/>
+  <rect x="24" y="24" width="1152" height="54" rx="16" fill="#10243a"/>
+  <circle cx="56" cy="51" r="9" fill="#ff5f57"/><circle cx="84" cy="51" r="9" fill="#febc2e"/><circle cx="112" cy="51" r="9" fill="#28c840"/>
+  <text x="600" y="58" text-anchor="middle" font-family="ui-monospace,Consolas,monospace" font-size="18" fill="#a9c5dc">AegisRoute • Advaitik Intelligence</text>
+  <g font-family="ui-monospace,Consolas,monospace" font-size="20">
+    <text x="58" y="124" fill="#53f2b5">$</text><text x="86" y="124" fill="#e9f4ff">aegisroute 142.250.72.14 --protocol icmp --enrich rdns,asn,rpki --service-check</text>
+    <text x="58" y="174" fill="#55c7ff">╔══════════════════════════════════════════════════════════════════════════════════════════════════════╗</text>
+    <text x="58" y="206" fill="#55c7ff">║</text><text x="86" y="206" fill="#f9d66b"> AEGISROUTE 3.0 </text><text x="302" y="206" fill="#c5d9ec">defensive route intelligence • Advaitik Intelligence</text><text x="1130" y="206" fill="#55c7ff">║</text>
+    <text x="58" y="238" fill="#55c7ff">╚══════════════════════════════════════════════════════════════════════════════════════════════════════╝</text>
+    <text x="58" y="288" fill="#a9c5dc">Target</text><text x="248" y="288" fill="#f1fbff">142.250.72.14</text><text x="540" y="288" fill="#a9c5dc">Backend</text><text x="728" y="288" fill="#f1fbff">ICMP compatibility</text>
+    <text x="58" y="328" fill="#a9c5dc">Destination</text><text x="248" y="328" fill="#53f2b5">REACHED</text><text x="540" y="328" fill="#a9c5dc">Quality</text><text x="728" y="328" fill="#f9d66b">87.5 / B</text>
+    <text x="58" y="378" fill="#f9d66b"> TTL    responder                              avg RTT     evidence</text>
+    <text x="58" y="414" fill="#a9c5dc">  1     local gateway                           1.2 ms      private address</text>
+    <text x="58" y="450" fill="#a9c5dc">  2     transit edge                            8.4 ms      ASN context</text>
+    <text x="58" y="486" fill="#a9c5dc">  3     * * *                                   —           response suppressed</text>
+    <text x="58" y="522" fill="#53f2b5">  4     142.250.72.14                           24.7 ms     destination reached</text>
+    <text x="58" y="578" fill="#a9c5dc">Routing security</text><text x="310" y="578" fill="#53f2b5">RPKI VALID</text><text x="540" y="578" fill="#a9c5dc">Service check</text><text x="728" y="578" fill="#53f2b5">TCP/443 reachable</text>
+    <text x="58" y="632" fill="#758da5">Report: JSON · HTML · Prometheus · SQLite history · BGP correlation · authorized use only</text>
+  </g>
+</svg>

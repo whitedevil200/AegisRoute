@@ -1,0 +1,52 @@
+.TH AEGISROUTE-AGENT 1 "October 2026" "AegisRoute 3.0.0" "Advaitik Intelligence"
+.SH NAME
+aegisroute-agent \- serve an atomically updated AegisRoute report to a remote collector
+.SH SYNOPSIS
+.B aegisroute-agent
+.BI --report " FILE"
+.RI [ options ]
+.SH DESCRIPTION
+The agent is a deliberately read-only HTTP service. It serves a JSON report that
+was created separately by AegisRoute. HTTP requests cannot select a target or
+start a probe. Bind to loopback and place it behind an authenticated TLS reverse
+proxy for remote use.
+.SH OPTIONS
+.TP
+.BI --report " FILE"
+Existing AegisRoute JSON report to serve. Required.
+.TP
+.BI --listen " ADDRESS"
+Listen address. Default: 127.0.0.1.
+.TP
+.BI --port " PORT"
+TCP port. Default: 8787.
+.TP
+.BI --token " TOKEN"
+Require an Authorization: Bearer header. Prefer AEGISROUTE_AGENT_TOKEN so the
+secret does not enter command history.
+.TP
+.BR -h , " --help"
+Show help.
+.SH ENDPOINTS
+.TP
+.B /health
+Returns a small status document after authentication.
+.TP
+.B /report
+Returns the current JSON report with no-store and nosniff response headers.
+.SH SECURITY
+The built-in server does not provide TLS. Do not expose it directly to an
+untrusted network. Use a long random token, a TLS reverse proxy, firewall rules,
+and a dedicated unprivileged service account.
+.SH ENVIRONMENT
+.TP
+.B AEGISROUTE_AGENT_TOKEN
+Default bearer token.
+.SH EXAMPLE
+.nf
+aegisroute example.com --format json -o /var/lib/aegisroute/latest.json
+AEGISROUTE_AGENT_TOKEN=secret aegisroute-agent \
+  --report /var/lib/aegisroute/latest.json
+.fi
+.SH SEE ALSO
+.BR aegisroute (1)

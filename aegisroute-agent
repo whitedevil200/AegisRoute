@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$SCRIPT_PATH")" && pwd)"
+PYTHON_BIN="${AEGISROUTE_PYTHON:-python3}"
+exec "$PYTHON_BIN" "$SCRIPT_DIR/aegisroute_agent.py" "$@"
