@@ -1,0 +1,12 @@
+{
+  "title": "AegisRoute Route Intelligence",
+  "tags": ["aegisroute", "network", "traceroute"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {"type": "stat", "title": "Destination Reachability", "targets": [{"expr": "aegisroute_target_reachable"}]},
+    {"type": "timeseries", "title": "Hop RTT", "targets": [{"expr": "aegisroute_hop_rtt_milliseconds"}]},
+    {"type": "timeseries", "title": "Hop Loss", "targets": [{"expr": "aegisroute_hop_loss_ratio"}]}
+  ]
+}

@@ -40,6 +40,7 @@ if [[ ! -w "${DESTDIR}${PREFIX}" ]]; then SUDO=(sudo); fi
 "${SUDO[@]}" install -m 0644 "$SCRIPT_DIR/aegisroute_advanced.py" "$INSTALL_DIR/aegisroute_advanced.py"
 "${SUDO[@]}" install -m 0644 "$SCRIPT_DIR/aegisroute_scamper.py" "$INSTALL_DIR/aegisroute_scamper.py"
 "${SUDO[@]}" install -m 0644 "$SCRIPT_DIR/aegisroute_pro.py" "$INSTALL_DIR/aegisroute_pro.py"
+"${SUDO[@]}" install -m 0644 "$SCRIPT_DIR/aegisroute_enterprise.py" "$INSTALL_DIR/aegisroute_enterprise.py"
 "${SUDO[@]}" install -m 0755 "$SCRIPT_DIR/aegisroute_agent.py" "$INSTALL_DIR/aegisroute_agent.py"
 "${SUDO[@]}" install -m 0755 "$SCRIPT_DIR/aegisroute" "$INSTALL_DIR/aegisroute"
 "${SUDO[@]}" install -m 0755 "$SCRIPT_DIR/aegisroute-agent" "$INSTALL_DIR/aegisroute-agent"

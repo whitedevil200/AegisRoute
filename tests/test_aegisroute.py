@@ -16,6 +16,7 @@ SPEC.loader.exec_module(aegisroute)
 from aegisroute_advanced import MeasurementStore, normalize_atlas_results
 from aegisroute_scamper import build_scamper_command, normalize_scamper_json
 from aegisroute_pro import historical_findings, html_report, merge_reports, parse_interface_extensions, quality_score
+from aegisroute_enterprise import atlas_create, incident_bundle
 
 
 class ParserTests(unittest.TestCase):
@@ -95,6 +96,26 @@ class ParserTests(unittest.TestCase):
     def test_default_company_brand(self):
         args = aegisroute.parser().parse_args(["--demo"])
         self.assertEqual(args.company, "Advaitik Intelligence")
+
+    def test_atlas_preview_needs_explicit_approval(self):
+        args = aegisroute.parser().parse_args(["example.com", "--atlas-create", "--protocol", "icmp"])
+        aegisroute.apply_profile(args)
+        aegisroute.validate_args(args)
+        result = atlas_create("example.com", args)
+        self.assertTrue(result["approval_required"])
+        self.assertFalse(result["created"])
+
+    def test_incident_bundle_has_hash_manifest(self):
+        args = aegisroute.parser().parse_args(["--demo", "--no-enrich"])
+        aegisroute.apply_profile(args)
+        aegisroute.validate_args(args)
+        report = aegisroute.make_report("demo", "203.0.113.80", args, aegisroute.demo_trace(), aegisroute.utc_now())
+        with tempfile.TemporaryDirectory() as directory:
+            result = incident_bundle(report, str(pathlib.Path(directory) / "incident.zip"), "test-key")
+            self.assertTrue(result["signed"])
+            import zipfile
+            with zipfile.ZipFile(result["path"]) as archive:
+                self.assertIn("manifest.signature.json", archive.namelist())
 
     def test_help_documents_all_options_and_concepts(self):
         help_text = aegisroute.parser().format_help()

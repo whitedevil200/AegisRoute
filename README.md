@@ -17,7 +17,7 @@ AegisRoute answers the operational questions a classic traceroute cannot answer 
 
 The tool probes only one user-supplied destination with bounded TTL-limited diagnostics. It is designed for authorized troubleshooting, network operations, and defensive research—not scanning, exploitation, or evasion.
 
-AegisRoute 3.0 is a Linux-first route intelligence and distributed path-observability tool for network troubleshooting, defensive security research, and repeatable measurement. It runs native Linux `traceroute`, can drive CAIDA Scamper for Paris/MDA/Ally measurements, correlates data-plane paths with BGP control-plane events, and produces evidence-backed reports.
+AegisRoute 3.1 is a Linux-first route intelligence and distributed path-observability tool for network troubleshooting, defensive security research, and repeatable measurement. It runs native Linux `traceroute`, can drive CAIDA Scamper for Paris/MDA/Ally measurements, correlates data-plane paths with BGP control-plane events, and produces evidence-backed reports.
 
 Windows can also run real targets through an automatic ICMP `tracert.exe` compatibility backend. Every protocol choice produces a real trace instead of failing, and the report identifies both the requested mode and actual ICMP backend. True TCP/UDP packet semantics, flow pinning, interface binding, IPv4 source binding, custom probe counts, and MTU discovery remain Linux-only.
 
@@ -50,6 +50,14 @@ It is intentionally more than a prettier traceroute:
 - RFC 5837 interface information, MPLS timelines, and external TNT captures are normalized when present.
 - Scamper Ally can actively confirm bounded router-alias candidates; heuristics are never presented as confirmation.
 - Standalone HTML investigation reports, live redraw mode, quality scores, webhooks, SMTP alerts, and a read-only remote agent are included.
+
+## Evidence-grade and enterprise capabilities
+
+AegisRoute 3.1 adds adaptive measurement profiles, calibrated measurement
+confidence, real-time RIS Live/BGPStream evidence timelines, approval-gated
+RIPE Atlas creation, signed and policy-controlled remote reporting, incident
+bundles, OTLP export, a Grafana starter dashboard, and operator-supplied IOAM
+imports. These integrations are all opt-in. See [the enterprise guide](docs/ENTERPRISE.md).
 
 ## Designer CLI
 

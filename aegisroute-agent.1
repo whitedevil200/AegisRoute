@@ -1,4 +1,4 @@
-.TH AEGISROUTE-AGENT 1 "October 2026" "AegisRoute 3.0.0" "Advaitik Intelligence"
+.TH AEGISROUTE-AGENT 1 "October 2026" "AegisRoute 3.1.0" "Advaitik Intelligence"
 .SH NAME
 aegisroute-agent \- serve an atomically updated AegisRoute report to a remote collector
 .SH SYNOPSIS
@@ -25,6 +25,25 @@ TCP port. Default: 8787.
 Require an Authorization: Bearer header. Prefer AEGISROUTE_AGENT_TOKEN so the
 secret does not enter command history.
 .TP
+.BI --signing-key " SECRET"
+HMAC-SHA256 key used to sign successful responses. Prefer
+.B AEGISROUTE_AGENT_SIGNING_KEY
+to avoid shell history.
+.TP
+.BI --allowed-cidr " CIDR"
+Permit serving only reports whose destination is within this CIDR. Repeatable.
+.TP
+.BI --requests-per-minute " N"
+Per-client request ceiling. Default: 30.
+.TP
+.BI --tls-cert " FILE"
+and
+.BI --tls-key " FILE"
+Enable server TLS. A non-loopback listen address is rejected unless TLS is set.
+.TP
+.BI --tls-ca " FILE"
+Trust this client CA and require client certificates: mutual TLS.
+.TP
 .BR -h , " --help"
 Show help.
 .SH ENDPOINTS
@@ -35,13 +54,16 @@ Returns a small status document after authentication.
 .B /report
 Returns the current JSON report with no-store and nosniff response headers.
 .SH SECURITY
-The built-in server does not provide TLS. Do not expose it directly to an
-untrusted network. Use a long random token, a TLS reverse proxy, firewall rules,
-and a dedicated unprivileged service account.
+The built-in server must not be exposed to an untrusted network without TLS.
+Use a long random token, response signing, destination policy, firewall rules,
+and a dedicated unprivileged service account. Supplying a client CA enables mTLS.
 .SH ENVIRONMENT
 .TP
 .B AEGISROUTE_AGENT_TOKEN
 Default bearer token.
+.TP
+.B AEGISROUTE_AGENT_SIGNING_KEY
+Default response-signing key.
 .SH EXAMPLE
 .nf
 aegisroute example.com --format json -o /var/lib/aegisroute/latest.json

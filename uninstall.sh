@@ -16,7 +16,7 @@ if [[ ! -w "${DESTDIR}${PREFIX}" ]]; then SUDO=(sudo); fi
 [[ -f "$MAN_PAGE" ]] && "${SUDO[@]}" rm -- "$MAN_PAGE"
 [[ -f "$AGENT_MAN_PAGE" ]] && "${SUDO[@]}" rm -- "$AGENT_MAN_PAGE"
 if [[ -d "$INSTALL_DIR" ]]; then
-  "${SUDO[@]}" rm -- "$INSTALL_DIR/aegisroute" "$INSTALL_DIR/aegisroute-agent" "$INSTALL_DIR/aegisroute.py" "$INSTALL_DIR/aegisroute_advanced.py" "$INSTALL_DIR/aegisroute_scamper.py" "$INSTALL_DIR/aegisroute_pro.py" "$INSTALL_DIR/aegisroute_agent.py"
+  "${SUDO[@]}" rm -- "$INSTALL_DIR/aegisroute" "$INSTALL_DIR/aegisroute-agent" "$INSTALL_DIR/aegisroute.py" "$INSTALL_DIR/aegisroute_advanced.py" "$INSTALL_DIR/aegisroute_scamper.py" "$INSTALL_DIR/aegisroute_pro.py" "$INSTALL_DIR/aegisroute_enterprise.py" "$INSTALL_DIR/aegisroute_agent.py"
   "${SUDO[@]}" rmdir -- "$INSTALL_DIR"
 fi
 printf 'AegisRoute removed. The system traceroute package was left installed.\n'

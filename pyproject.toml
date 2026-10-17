@@ -23,4 +23,4 @@ aegisroute = "aegisroute:main"
 aegisroute-agent = "aegisroute_agent:main"
 
 [tool.setuptools]
-py-modules = ["aegisroute", "aegisroute_advanced", "aegisroute_scamper", "aegisroute_pro", "aegisroute_agent"]
+py-modules = ["aegisroute", "aegisroute_advanced", "aegisroute_scamper", "aegisroute_pro", "aegisroute_enterprise", "aegisroute_agent"]

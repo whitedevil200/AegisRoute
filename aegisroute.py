@@ -37,8 +37,10 @@ from aegisroute_pro import (alias_candidates, fetch_bgp_events, fetch_bgpstream_
                            load_report_source, merge_reports, mpls_analysis,
                            parse_interface_extensions, quality_score,
                            send_email, send_webhook, service_diagnostics)
+from aegisroute_enterprise import (apply_profile, atlas_create, atlas_definition, evidence_timeline,
+                                   export_otlp, incident_bundle, ingest_ioam, measurement_confidence, ris_live_events)
 
-VERSION = "3.0.0"
+VERSION = "3.1.0"
 DEFAULT_COMPANY = "Advaitik Intelligence"
 CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
 IP_RE = re.compile(r"(?<![\w:])(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]{2,})(?![\w:])")
@@ -770,6 +772,7 @@ def make_report(target: str, destination_ip: str, args: argparse.Namespace, trac
             "settings": {"protocol": args.protocol, "port": args.port, "probes": args.probes,
                          "max_hops": args.max_hops, "wait_seconds": args.wait,
                          "flow_consistent": args.flow_consistent, "mtu_discovery": args.mtu,
+                         "measurement_profile": args.profile,
                          "enrichment": sorted(args.enrich),
                          "backend": "demo" if args.demo else "scamper" if getattr(args, "active_backend", None) == "scamper" else "windows-tracert-icmp" if is_windows_backend(args.binary) else "linux-traceroute",
                          "strategy": args.strategy,
@@ -779,6 +782,7 @@ def make_report(target: str, destination_ip: str, args: argparse.Namespace, trac
     report["fusion_graph"] = build_fusion_graph(report)
     report["mpls_analysis"] = mpls_analysis(report)
     report["quality"] = quality_score(report)
+    report["measurement_confidence"] = measurement_confidence(report)
     return report
 
 
@@ -1004,6 +1008,14 @@ async def augment_report(args: argparse.Namespace, report: dict[str, Any], previ
                                        "type": "multiple_bgp_origins", "detail": f"multiple origins appeared: {bgp['origin_asns']}",
                                        "confidence": .75, "evidence": [f"Origins in {bgp.get('provider')} update paths"],
                                        "alternative_explanations": ["legitimate MOAS", "route-server artifact"]})
+    if args.ris_live_seconds:
+        prefixes = list(dict.fromkeys(
+            responder.get("prefix") for trace in report.get("traces", []) for hop in trace.get("hops", [])
+            for responder in hop.get("responders", []) if responder.get("prefix")
+        ))
+        report["ris_live"] = await ris_live_events(prefixes, args.ris_live_seconds)
+    if args.ioam_input:
+        report["ioam"] = ingest_ioam(args.ioam_input)
     if args.service_check or args.tls_check:
         report["service_diagnostics"] = await loop.run_in_executor(
             None, service_diagnostics, report["target"], report["destination_ip"], args.port,
@@ -1047,6 +1059,8 @@ async def augment_report(args: argparse.Namespace, report: dict[str, Any], previ
     report["mpls_analysis"] = mpls_analysis(report)
     report["quality"] = quality_score(report)
     report["findings"] = evidence_findings(report["findings"])
+    report["measurement_confidence"] = measurement_confidence(report)
+    report["evidence_timeline"] = evidence_timeline(report)
 
 
 async def deliver_alerts(args: argparse.Namespace, report: dict[str, Any]) -> None:
@@ -1163,6 +1177,8 @@ def parser() -> argparse.ArgumentParser:
                    help="destination service port used by TCP/UDP probes; ignored by ICMP")
     p.add_argument("-q", "--probes", type=int, default=3,
                    help="number of samples sent for each TTL; more samples improve statistics but increase traffic/time")
+    p.add_argument("--profile", choices=["fast", "balanced", "forensic", "low-impact", "custom"], default="balanced",
+                   help="bounded measurement profile; custom preserves explicit probe settings")
     p.add_argument("-m", "--max-hops", type=int, default=30,
                    help="highest TTL/hop limit to probe before declaring the path incomplete")
     p.add_argument("-f", "--first-hop", type=int, default=1,
@@ -1209,6 +1225,18 @@ def parser() -> argparse.ArgumentParser:
                    help="fetch public results for an existing RIPE Atlas measurement ID, then exit as JSON")
     p.add_argument("--atlas-ids", metavar="ID,ID",
                    help="fetch and fuse multiple existing RIPE Atlas measurements")
+    p.add_argument("--atlas-create", action="store_true",
+                   help="prepare/create an opt-in RIPE Atlas traceroute; creation needs --approve-atlas-cost")
+    p.add_argument("--atlas-probes", type=int, default=5, metavar="N",
+                   help="requested RIPE Atlas probe count for --atlas-create")
+    p.add_argument("--atlas-countries", metavar="CC,CC",
+                   help="optional Atlas country selection for --atlas-create")
+    p.add_argument("--atlas-interval", type=int, metavar="SECONDS",
+                   help="create a recurring Atlas measurement at this interval; otherwise one-off")
+    p.add_argument("--atlas-api-key", default=os.environ.get("AEGISROUTE_ATLAS_API_KEY"), metavar="KEY",
+                   help="RIPE Atlas API key; AEGISROUTE_ATLAS_API_KEY avoids shell history")
+    p.add_argument("--approve-atlas-cost", action="store_true",
+                   help="explicitly approve submitting the displayed Atlas request; credit cost is determined by RIPE Atlas")
     p.add_argument("--merge-report", action="append", metavar="FILE",
                    help="merge another AegisRoute JSON report as a measurement vantage; repeatable")
     p.add_argument("--remote-report", action="append", metavar="URL",
@@ -1221,6 +1249,8 @@ def parser() -> argparse.ArgumentParser:
                    help="BGP event lookback window, from 1 through 168 hours")
     p.add_argument("--bgp-provider", choices=["ripestat", "bgpstream"], default="ripestat",
                    help="control-plane source; BGPStream requires the optional pybgpstream package")
+    p.add_argument("--ris-live-seconds", type=int, default=0, metavar="SECONDS",
+                   help="bounded RIPE RIS Live BGP sample; requires optional websockets package")
     p.add_argument("--service-check", action="store_true",
                    help="measure direct TCP service reachability and connection time on --port")
     p.add_argument("--tls-check", action="store_true",
@@ -1231,6 +1261,14 @@ def parser() -> argparse.ArgumentParser:
                    help="maximum Ally address pairs tested per measurement, from 1 through 20")
     p.add_argument("--tnt-output", metavar="FILE",
                    help="import external TNT text output for hidden-MPLS correlation without claiming local revelation")
+    p.add_argument("--ioam-input", metavar="OPERATOR.json",
+                   help="import operator-authorized IOAM JSON; never injects IOAM packets")
+    p.add_argument("--bundle", metavar="INCIDENT.zip",
+                   help="write a reproducible incident bundle with report, HTML, hashes, and optional signature")
+    p.add_argument("--signing-key", default=os.environ.get("AEGISROUTE_SIGNING_KEY"), metavar="SECRET",
+                   help="HMAC signing secret for --bundle; AEGISROUTE_SIGNING_KEY avoids shell history")
+    p.add_argument("--otel-endpoint", metavar="URL",
+                   help="POST bounded-cardinality OTLP/HTTP JSON spans after a measurement")
     p.add_argument("--history-latency-delta", type=float, default=25.0, metavar="MS",
                    help="historical average-RTT increase that creates a persistent degradation finding")
     p.add_argument("--webhook", metavar="HTTPS_URL",
@@ -1331,6 +1369,16 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("BGP window must be between 1 and 168 hours")
     if args.history_latency_delta <= 0:
         raise ValueError("history latency delta must be greater than zero")
+    if not 1 <= args.atlas_probes <= 50:
+        raise ValueError("atlas probes must be between 1 and 50")
+    if args.atlas_interval is not None and not 60 <= args.atlas_interval <= 86400:
+        raise ValueError("atlas interval must be between 60 and 86400 seconds")
+    if not 0 <= args.ris_live_seconds <= 300:
+        raise ValueError("RIS Live sample duration must be between 0 and 300 seconds")
+    if args.approve_atlas_cost and not args.atlas_create:
+        raise ValueError("--approve-atlas-cost requires --atlas-create")
+    if args.atlas_create and args.protocol == "all":
+        raise ValueError("--atlas-create requires one Atlas protocol: --protocol udp, tcp, or icmp")
     if not 1 <= args.alias_max_pairs <= 20:
         raise ValueError("alias max pairs must be between 1 and 20")
     if args.tnt_output and not Path(args.tnt_output).expanduser().is_file():
@@ -1401,6 +1449,7 @@ async def async_main(args: argparse.Namespace) -> int:
         report["target"] = "ripe-atlas:" + ",".join(str(item) for item in args.atlas_id_list)
         report["fusion_graph"] = build_fusion_graph(report)
         report["quality"] = quality_score(report)
+        report["measurement_confidence"] = measurement_confidence(report)
         if args.store and report.get("traces"):
             report["measurement_id"] = MeasurementStore(args.store).save(report)
         print(json.dumps(report, indent=2))
@@ -1409,6 +1458,7 @@ async def async_main(args: argparse.Namespace) -> int:
         results = await asyncio.get_running_loop().run_in_executor(None, fetch_atlas_results, args.atlas_id)
         report = normalize_atlas_results(args.atlas_id, results, args.company)
         report["quality"] = quality_score(report)
+        report["measurement_confidence"] = measurement_confidence(report)
         report["mpls_analysis"] = mpls_analysis(report)
         if args.store and report.get("traces"):
             report["measurement_id"] = MeasurementStore(args.store).save(report)
@@ -1426,6 +1476,10 @@ async def async_main(args: argparse.Namespace) -> int:
             traces.append(load_tnt_trace(args.tnt_output, args.probes))
         report = make_report(args.target, "203.0.113.80", args, traces, utc_now())
         await augment_report(args, report, None)
+        if args.bundle:
+            report["incident_bundle"] = incident_bundle(report, args.bundle, args.signing_key)
+        if args.otel_endpoint:
+            report["otel_delivery"] = export_otlp(args.otel_endpoint, report)
         await deliver_alerts(args, report)
         if args.store:
             report["measurement_id"] = MeasurementStore(args.store).save(report)
@@ -1435,6 +1489,10 @@ async def async_main(args: argparse.Namespace) -> int:
     resolve_started = time.monotonic()
     target, destination_ip = await resolve_target(args.target, family)
     resolution_ms = round((time.monotonic() - resolve_started) * 1000, 3)
+    if args.atlas_create:
+        result = await asyncio.get_running_loop().run_in_executor(None, atlas_create, target, args)
+        print(json.dumps(result, indent=2))
+        return 0
     args.active_backend = "scamper" if args.backend == "scamper" or (args.backend == "auto" and args.strategy != "classic") else "native"
     if args.active_backend == "scamper":
         scamper = shutil.which(args.scamper_binary)
@@ -1474,6 +1532,10 @@ async def async_main(args: argparse.Namespace) -> int:
         report["resolution"] = {"address": destination_ip, "family": "IPv6" if args.ipv6 else "IPv4",
                                 "duration_ms": resolution_ms}
         await augment_report(args, report, baseline)
+        if args.bundle:
+            report["incident_bundle"] = incident_bundle(report, args.bundle, args.signing_key)
+        if args.otel_endpoint:
+            report["otel_delivery"] = export_otlp(args.otel_endpoint, report)
         await deliver_alerts(args, report)
         if args.store:
             report["measurement_id"] = MeasurementStore(args.store).save(report)
@@ -1504,6 +1566,7 @@ def main() -> int:
                                                   and not args.atlas_ids and sys.stdin.isatty())
         if wants_interactive:
             interactive_setup(args)
+        apply_profile(args)
         validate_args(args)
         return asyncio.run(async_main(args))
     except KeyboardInterrupt:
