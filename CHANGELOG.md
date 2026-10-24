@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.0 — Evidence-driven path security
+
+- Added deterministic measurement-record exports, privacy-safe report views, and robust local P50/P95/P99 monitoring baselines.
+- Added conservative BGP security rules, alert fingerprint suppression, controlled packet-integrity and Cilium Hubble evidence imports.
+- Added approval-gated Globalping request previews, CycloneDX SBOM generation, and remote-agent nonce replay protection.
+- Kept all active network measurements bounded and opt-in; imported enterprise evidence never becomes an unsupported Internet-path claim.
+
 All notable changes to AegisRoute are documented here.
 
 ## 3.1.0 — 2026-10-18

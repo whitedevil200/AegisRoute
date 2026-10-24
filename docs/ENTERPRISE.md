@@ -1,7 +1,26 @@
-# AegisRoute 3.1: Evidence and enterprise integrations
+# AegisRoute 3.2: Evidence and enterprise integrations
 
 These features are optional. A normal AegisRoute trace does not create remote
 measurements, open an agent listener, send OpenTelemetry data, or inject IOAM.
+
+## Evidence, privacy, and release assurance
+
+`--measurement-record FILE` emits the portable per-hop record used for replay
+and evidence retention. `--privacy standard|strict` redacts the emitted report;
+keep a non-redacted source record only in an access-controlled evidence store.
+`--monitor-baseline N --store DB` summarizes recent observations with
+P50/P95/P99 values and explicitly does not equate intermediate ICMP reply loss
+with application packet loss.
+
+`--alert-state FILE --alert-cooldown SECONDS` makes scheduled alerts
+deterministically deduplicated. Do not share alert state between unrelated
+environments. `aegisroute --sbom FILE` writes a CycloneDX 1.5 SBOM; publish it
+alongside checksums and your organization’s signing/provenance evidence.
+
+`--globalping` is a transparent distributed-measurement preview. Submission
+requires `--approve-globalping`, and remains one bounded traceroute request.
+`--hubble-flows` and `--integrity-observation` import operator-exported JSON
+only: they never load eBPF, access a cluster, or send crafted mutation probes.
 
 ## Measurement profiles and confidence
 
@@ -56,6 +75,9 @@ aegisroute-agent --report /var/lib/aegisroute/latest.json \
 ```
 
 Signed responses carry `X-AegisRoute-Timestamp` and an HMAC-SHA256 signature.
+Use `--require-nonce` to reject replayed report requests; the nonce is bound to
+the signed response. Collectors should reject old timestamps and verify both
+the nonce and signature.
 For mTLS, add `--tls-cert`, `--tls-key`, and `--tls-ca`. Non-loopback binding
 is rejected unless TLS is configured.
 

@@ -59,6 +59,36 @@ RIPE Atlas creation, signed and policy-controlled remote reporting, incident
 bundles, OTLP export, a Grafana starter dashboard, and operator-supplied IOAM
 imports. These integrations are all opt-in. See [the enterprise guide](docs/ENTERPRISE.md).
 
+## Evidence-driven upgrades (3.2)
+
+AegisRoute 3.2 focuses on making route observations useful in operations and
+incident response without overstating what traceroute can prove:
+
+- `--measurement-record FILE` writes a stable per-hop evidence record for replay and long-term archival.
+- `--privacy standard|strict` masks identifiers in emitted reports while leaving the local source observation intact.
+- `--monitor-baseline N --store routes.db` attaches robust P50/P95/P99 historical RTT context. It explicitly does **not** treat intermediate ICMP reply loss as application packet loss.
+- `--alert-state FILE` and `--alert-cooldown SECONDS` deduplicate repeated alerts across scheduled runs.
+- `--globalping` previews a bounded distributed-vantage request; `--approve-globalping` is required before submission.
+- `--hubble-flows` and `--integrity-observation` import operator-controlled evidence only. AegisRoute does not load eBPF, access a cluster, or send packet-mutation probes.
+- `--sbom FILE` produces a CycloneDX 1.5 software bill of materials for release evidence.
+
+Examples:
+
+```bash
+# Archive an investigation safely for external sharing
+aegisroute example.com --measurement-record record.json --privacy standard --format json -o report.json
+
+# Continuous monitoring with stateful, deduplicated alerts
+aegisroute example.com --watch 60 --store routes.db --monitor-baseline 10 \
+  --alert-state alerts.json --alert-cooldown 1800 --webhook https://alerts.example.invalid/hook
+
+# Preview before asking Globalping to run a distributed trace
+aegisroute example.com --globalping --protocol icmp
+
+# Release evidence
+aegisroute --sbom aegisroute.cdx.json
+```
+
 ## Designer CLI
 
 Start the guided selection menu by running AegisRoute without a target in an interactive terminal:

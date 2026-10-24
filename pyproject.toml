@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aegisroute"
-version = "3.0.0"
+version = "3.2.0"
 description = "Cross-platform route measurement, fusion, and routing-security intelligence"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,4 +23,4 @@ aegisroute = "aegisroute:main"
 aegisroute-agent = "aegisroute_agent:main"
 
 [tool.setuptools]
-py-modules = ["aegisroute", "aegisroute_advanced", "aegisroute_scamper", "aegisroute_pro", "aegisroute_enterprise", "aegisroute_agent"]
+py-modules = ["aegisroute", "aegisroute_advanced", "aegisroute_scamper", "aegisroute_pro", "aegisroute_enterprise", "aegisroute_intelligence", "aegisroute_agent"]

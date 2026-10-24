@@ -17,6 +17,8 @@ from aegisroute_advanced import MeasurementStore, normalize_atlas_results
 from aegisroute_scamper import build_scamper_command, normalize_scamper_json
 from aegisroute_pro import historical_findings, html_report, merge_reports, parse_interface_extensions, quality_score
 from aegisroute_enterprise import atlas_create, incident_bundle
+from aegisroute_intelligence import (cyclonedx_sbom, globalping_request, measurement_record,
+                                     monitoring_baseline, redact_report, suppress_duplicate_alerts)
 
 
 class ParserTests(unittest.TestCase):
@@ -182,6 +184,37 @@ class ParserTests(unittest.TestCase):
             store = MeasurementStore(str(pathlib.Path(folder) / "history.db"))
             store.cache_set("asn", {"8.8.8.8": {"asn": 15169}}, 60)
             self.assertEqual(store.cache_get("asn", ["8.8.8.8"])["8.8.8.8"]["asn"], 15169)
+
+    def test_evidence_record_and_privacy_view(self):
+        args = aegisroute.parser().parse_args(["--demo", "--no-enrich"])
+        aegisroute.validate_args(args)
+        report = aegisroute.make_report("demo.example", "203.0.113.80", args, aegisroute.demo_trace(), aegisroute.utc_now())
+        record = measurement_record(report)
+        self.assertEqual(record["schema"], "aegisroute/measurement-record-v1")
+        self.assertTrue(record["observations"])
+        self.assertNotIn("203.0.113.80", json.dumps(redact_report(report, "strict")))
+
+    def test_baseline_alert_suppression_and_sbom(self):
+        args = aegisroute.parser().parse_args(["--demo", "--no-enrich"])
+        aegisroute.validate_args(args)
+        report = aegisroute.make_report("demo", "203.0.113.80", args, aegisroute.demo_trace(), aegisroute.utc_now())
+        baseline = monitoring_baseline([report, report])
+        self.assertTrue(baseline["available"])
+        with tempfile.TemporaryDirectory() as folder:
+            state = str(pathlib.Path(folder) / "alerts.json")
+            filtered, suppressed = suppress_duplicate_alerts({"findings": [{"type": "x", "detail": "same"}]}, state, 60)
+            self.assertEqual(suppressed, 0); self.assertEqual(len(filtered["findings"]), 1)
+            _, suppressed = suppress_duplicate_alerts({"findings": [{"type": "x", "detail": "same"}]}, state, 60)
+            self.assertEqual(suppressed, 1)
+            sbom = cyclonedx_sbom("3.2.0", str(pathlib.Path(folder) / "sbom.json"))
+            self.assertEqual(sbom["format"], "CycloneDX-1.5")
+
+    def test_globalping_preview_is_approval_gated(self):
+        args = aegisroute.parser().parse_args(["example.com", "--globalping"])
+        aegisroute.validate_args(args)
+        preview = globalping_request("example.com", args)
+        self.assertTrue(preview["approval_required"])
+        self.assertFalse(preview["created"])
 
 
 if __name__ == "__main__":

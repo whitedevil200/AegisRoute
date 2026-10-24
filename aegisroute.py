@@ -39,8 +39,11 @@ from aegisroute_pro import (alias_candidates, fetch_bgp_events, fetch_bgpstream_
                            send_email, send_webhook, service_diagnostics)
 from aegisroute_enterprise import (apply_profile, atlas_create, atlas_definition, evidence_timeline,
                                    export_otlp, incident_bundle, ingest_ioam, measurement_confidence, ris_live_events)
+from aegisroute_intelligence import (bgp_security_findings, cyclonedx_sbom, globalping_request,
+                                     import_operator_evidence, measurement_record, monitoring_baseline,
+                                     redact_report, suppress_duplicate_alerts)
 
-VERSION = "3.1.0"
+VERSION = "3.2.0"
 DEFAULT_COMPANY = "Advaitik Intelligence"
 CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
 IP_RE = re.compile(r"(?<![\w:])(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]{2,})(?![\w:])")
@@ -85,6 +88,12 @@ HOW IT WORKS
   5. The analysis engine produces evidence-backed findings and table, JSON,
      JSONL, CSV, or Prometheus output.
   6. A fusion graph correlates protocols; optional SQLite retains route history.
+
+ADVANCED EVIDENCE CONTROLS
+  --measurement-record produces a stable replay/archive record. --privacy masks
+  identifiers only in emitted reports. --monitor-baseline summarizes recent local
+  history and never equates intermediate ICMP loss with application packet loss.
+  Provider measurements are previewed first and require explicit approval.
 
 Run with no target in an interactive terminal to open the guided selection menu.
 Use --demo to exercise the complete interface without sending network packets.
@@ -1008,6 +1017,9 @@ async def augment_report(args: argparse.Namespace, report: dict[str, Any], previ
                                        "type": "multiple_bgp_origins", "detail": f"multiple origins appeared: {bgp['origin_asns']}",
                                        "confidence": .75, "evidence": [f"Origins in {bgp.get('provider')} update paths"],
                                        "alternative_explanations": ["legitimate MOAS", "route-server artifact"]})
+        # Keep the more specific rules as separate evidence rather than replacing
+        # the backwards-compatible original finding names above.
+        report["findings"].extend(bgp_security_findings(bgp))
     if args.ris_live_seconds:
         prefixes = list(dict.fromkeys(
             responder.get("prefix") for trace in report.get("traces", []) for hop in trace.get("hops", [])
@@ -1016,6 +1028,10 @@ async def augment_report(args: argparse.Namespace, report: dict[str, Any], previ
         report["ris_live"] = await ris_live_events(prefixes, args.ris_live_seconds)
     if args.ioam_input:
         report["ioam"] = ingest_ioam(args.ioam_input)
+    if args.hubble_flows:
+        report["hubble_context"] = import_operator_evidence(args.hubble_flows, "cilium-hubble-flow")
+    if args.integrity_observation:
+        report["path_integrity"] = import_operator_evidence(args.integrity_observation, "controlled-packet-integrity")
     if args.service_check or args.tls_check:
         report["service_diagnostics"] = await loop.run_in_executor(
             None, service_diagnostics, report["target"], report["destination_ip"], args.port,
@@ -1061,6 +1077,7 @@ async def augment_report(args: argparse.Namespace, report: dict[str, Any], previ
     report["findings"] = evidence_findings(report["findings"])
     report["measurement_confidence"] = measurement_confidence(report)
     report["evidence_timeline"] = evidence_timeline(report)
+    report["measurement_record"] = measurement_record(report)
 
 
 async def deliver_alerts(args: argparse.Namespace, report: dict[str, Any]) -> None:
@@ -1073,6 +1090,9 @@ async def deliver_alerts(args: argparse.Namespace, report: dict[str, Any]) -> No
                       "unannounced_prefix", "service_unreachable"}
         alert_report = dict(report)
         alert_report["findings"] = [item for item in report.get("findings", []) if item.get("type") in actionable]
+    alert_report, suppressed = suppress_duplicate_alerts(alert_report, args.alert_state, args.alert_cooldown)
+    if suppressed:
+        report["alert_suppression"] = {"suppressed": suppressed, "cooldown_seconds": args.alert_cooldown}
     if args.webhook:
         deliveries["webhook"] = await loop.run_in_executor(
             None, send_webhook, args.webhook, alert_report, args.alert_severity)
@@ -1085,6 +1105,7 @@ async def deliver_alerts(args: argparse.Namespace, report: dict[str, Any]) -> No
 
 
 def output_report(report: dict[str, Any], args: argparse.Namespace, append: bool = False) -> None:
+    report = redact_report(report, args.privacy)
     if args.format == "json":
         content = json.dumps(report, indent=2, sort_keys=False) + "\n"
     elif args.format == "jsonl":
@@ -1237,6 +1258,12 @@ def parser() -> argparse.ArgumentParser:
                    help="RIPE Atlas API key; AEGISROUTE_ATLAS_API_KEY avoids shell history")
     p.add_argument("--approve-atlas-cost", action="store_true",
                    help="explicitly approve submitting the displayed Atlas request; credit cost is determined by RIPE Atlas")
+    p.add_argument("--globalping", action="store_true",
+                   help="prepare an opt-in, bounded Globalping traceroute request instead of a local trace")
+    p.add_argument("--globalping-probes", type=int, default=3, metavar="N",
+                   help="Globalping vantage count requested by --globalping, from 1 through 10")
+    p.add_argument("--approve-globalping", action="store_true",
+                   help="explicitly submit the displayed Globalping request; requires --globalping")
     p.add_argument("--merge-report", action="append", metavar="FILE",
                    help="merge another AegisRoute JSON report as a measurement vantage; repeatable")
     p.add_argument("--remote-report", action="append", metavar="URL",
@@ -1263,6 +1290,22 @@ def parser() -> argparse.ArgumentParser:
                    help="import external TNT text output for hidden-MPLS correlation without claiming local revelation")
     p.add_argument("--ioam-input", metavar="OPERATOR.json",
                    help="import operator-authorized IOAM JSON; never injects IOAM packets")
+    p.add_argument("--hubble-flows", metavar="OPERATOR.json",
+                   help="import an operator-exported Cilium Hubble flow record; never loads eBPF or contacts a cluster")
+    p.add_argument("--integrity-observation", metavar="CAPTURE.json",
+                   help="import a controlled Tracebox-style packet observation; no active packet-mutation probes are sent")
+    p.add_argument("--measurement-record", metavar="FILE",
+                   help="write a stable per-hop measurement record for archival or deterministic replay")
+    p.add_argument("--privacy", choices=["off", "standard", "strict"], default="off",
+                   help="mask identifiers in emitted reports; original local measurements remain unchanged")
+    p.add_argument("--monitor-baseline", type=int, metavar="N",
+                   help="attach robust P50/P95/P99 baseline from the latest N local SQLite measurements")
+    p.add_argument("--alert-state", metavar="FILE",
+                   help="persist alert fingerprints to suppress repeat notifications")
+    p.add_argument("--alert-cooldown", type=int, default=900, metavar="SECONDS",
+                   help="minimum repeat-notification interval per identical alert")
+    p.add_argument("--sbom", metavar="FILE",
+                   help="write a CycloneDX 1.5 JSON SBOM and exit")
     p.add_argument("--bundle", metavar="INCIDENT.zip",
                    help="write a reproducible incident bundle with report, HTML, hashes, and optional signature")
     p.add_argument("--signing-key", default=os.environ.get("AEGISROUTE_SIGNING_KEY"), metavar="SECRET",
@@ -1377,6 +1420,10 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("RIS Live sample duration must be between 0 and 300 seconds")
     if args.approve_atlas_cost and not args.atlas_create:
         raise ValueError("--approve-atlas-cost requires --atlas-create")
+    if args.approve_globalping and not args.globalping:
+        raise ValueError("--approve-globalping requires --globalping")
+    if not 1 <= args.globalping_probes <= 10:
+        raise ValueError("globalping probes must be between 1 and 10")
     if args.atlas_create and args.protocol == "all":
         raise ValueError("--atlas-create requires one Atlas protocol: --protocol udp, tcp, or icmp")
     if not 1 <= args.alias_max_pairs <= 20:
@@ -1400,6 +1447,10 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--tui requires an interactive terminal and cannot use --output")
     if args.watch and args.format == "json":
         args.format = "jsonl"
+    if args.monitor_baseline is not None and (args.monitor_baseline < 2 or not args.store):
+        raise ValueError("--monitor-baseline requires --store DATABASE and N of at least 2")
+    if not 60 <= args.alert_cooldown <= 604800:
+        raise ValueError("alert cooldown must be between 60 and 604800 seconds")
 
 
 def run_doctor(args: argparse.Namespace) -> int:
@@ -1475,7 +1526,12 @@ async def async_main(args: argparse.Namespace) -> int:
         if args.tnt_output:
             traces.append(load_tnt_trace(args.tnt_output, args.probes))
         report = make_report(args.target, "203.0.113.80", args, traces, utc_now())
+        if args.monitor_baseline:
+            rows = MeasurementStore(args.store).history(args.target, args.monitor_baseline)
+            report["monitoring_baseline"] = monitoring_baseline([row["report"] for row in rows])
         await augment_report(args, report, None)
+        if args.measurement_record:
+            atomic_write(args.measurement_record, json.dumps(report["measurement_record"], indent=2) + "\n")
         if args.bundle:
             report["incident_bundle"] = incident_bundle(report, args.bundle, args.signing_key)
         if args.otel_endpoint:
@@ -1491,6 +1547,10 @@ async def async_main(args: argparse.Namespace) -> int:
     resolution_ms = round((time.monotonic() - resolve_started) * 1000, 3)
     if args.atlas_create:
         result = await asyncio.get_running_loop().run_in_executor(None, atlas_create, target, args)
+        print(json.dumps(result, indent=2))
+        return 0
+    if args.globalping:
+        result = await asyncio.get_running_loop().run_in_executor(None, globalping_request, target, args)
         print(json.dumps(result, indent=2))
         return 0
     args.active_backend = "scamper" if args.backend == "scamper" or (args.backend == "auto" and args.strategy != "classic") else "native"
@@ -1525,13 +1585,21 @@ async def async_main(args: argparse.Namespace) -> int:
     if baseline is None and args.store:
         rows = MeasurementStore(args.store).history(target, 1)
         baseline = rows[0]["report"] if rows else None
+    baseline_summary = None
+    if args.monitor_baseline:
+        rows = MeasurementStore(args.store).history(target, args.monitor_baseline)
+        baseline_summary = monitoring_baseline([row["report"] for row in rows])
     cycle = 0
     while True:
         cycle += 1
         report = await one_cycle(args, target, destination_ip, help_text, baseline, modes)
         report["resolution"] = {"address": destination_ip, "family": "IPv6" if args.ipv6 else "IPv4",
                                 "duration_ms": resolution_ms}
+        if baseline_summary:
+            report["monitoring_baseline"] = baseline_summary
         await augment_report(args, report, baseline)
+        if args.measurement_record:
+            atomic_write(args.measurement_record, json.dumps(report["measurement_record"], indent=2) + "\n")
         if args.bundle:
             report["incident_bundle"] = incident_bundle(report, args.bundle, args.signing_key)
         if args.otel_endpoint:
@@ -1560,6 +1628,9 @@ def main() -> int:
                 pass
     args = parser().parse_args()
     try:
+        if args.sbom:
+            print(json.dumps(cyclonedx_sbom(VERSION, args.sbom), indent=2))
+            return 0
         if args.doctor:
             return run_doctor(args)
         wants_interactive = args.interactive or (not args.target and not args.demo and args.atlas_id is None

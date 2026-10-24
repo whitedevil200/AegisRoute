@@ -28,6 +28,8 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--tls-cert", metavar="FILE", help="server certificate PEM; required for non-loopback")
     value.add_argument("--tls-key", metavar="FILE", help="server private-key PEM")
     value.add_argument("--tls-ca", metavar="FILE", help="client CA PEM; enables mandatory mutual TLS")
+    value.add_argument("--require-nonce", action="store_true",
+                       help="require a unique X-AegisRoute-Nonce header on every report request to reduce replay risk")
     return value
 
 
@@ -49,9 +51,10 @@ def main() -> int:
     if tls_enabled and not (args.tls_cert and args.tls_key):
         raise SystemExit("aegisroute-agent: TLS requires both --tls-cert and --tls-key")
     buckets: dict[str, deque[float]] = defaultdict(deque)
+    nonces: dict[str, float] = {}
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "AegisRouteAgent/3.1"
+        server_version = "AegisRouteAgent/3.2"
 
         def _allowed(self) -> bool:
             if args.token and not hmac.compare_digest(self.headers.get("Authorization", ""), f"Bearer {args.token}"):
@@ -62,6 +65,14 @@ def main() -> int:
             if len(bucket) >= args.requests_per_minute:
                 return False
             bucket.append(now)
+            if args.require_nonce and self.path == "/report":
+                nonce = self.headers.get("X-AegisRoute-Nonce", "")
+                if not 16 <= len(nonce) <= 256 or nonce in nonces:
+                    return False
+                nonces[nonce] = now
+                for old, seen in list(nonces.items()):
+                    if seen < now - 600:
+                        del nonces[old]
             return True
 
         def _payload(self) -> bytes | None:
@@ -91,10 +102,13 @@ def main() -> int:
             self.send_header("X-Content-Type-Options", "nosniff")
             if args.signing_key:
                 timestamp = str(int(time.time()))
-                digest = hmac.new(args.signing_key.encode(), timestamp.encode() + b"." + payload, hashlib.sha256).hexdigest()
+                nonce = self.headers.get("X-AegisRoute-Nonce", "")
+                digest = hmac.new(args.signing_key.encode(), timestamp.encode() + b"." + nonce.encode() + b"." + payload, hashlib.sha256).hexdigest()
                 self.send_header("X-AegisRoute-Key-Id", args.key_id)
                 self.send_header("X-AegisRoute-Timestamp", timestamp)
                 self.send_header("X-AegisRoute-Signature", f"sha256={digest}")
+                if nonce:
+                    self.send_header("X-AegisRoute-Nonce", nonce)
             self.end_headers(); self.wfile.write(payload)
 
         def log_message(self, fmt: str, *values: object) -> None:
@@ -109,7 +123,7 @@ def main() -> int:
         server.socket = context.wrap_socket(server.socket, server_side=True)
     scheme = "https" if tls_enabled else "http"
     print(f"Serving policy-approved report on {scheme}://{args.listen}:{args.port}/report")
-    print("Mode: read-only; mTLS is active when --tls-ca is supplied.")
+    print("Mode: read-only; mTLS is active when --tls-ca is supplied. Nonce replay protection is active with --require-nonce.")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
